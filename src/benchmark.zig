@@ -80,7 +80,12 @@ const ClientWorker = struct {
 
         // Warmup requests
         for (0..self.config.warmup_requests) |_| {
-            _ = client.call("Benchmark", payload, .none) catch continue;
+            if (client.call("Benchmark", payload, .none)) |warmup_response| {
+                self.allocator.free(warmup_response);
+            } else |_| {
+                // Ignore warmup errors
+                continue;
+            }
         }
 
         // Actual benchmark requests
@@ -311,6 +316,8 @@ pub fn main() !void {
     const parsed = try parseArgs(allocator);
     const config = parsed.config;
     const output_format = parsed.output_format;
+    // Free the duplicated host string at the end
+    defer if (config.host.ptr != "localhost".ptr) allocator.free(config.host);
 
     std.debug.print("gRPC-zig Benchmark Tool", .{});
     std.debug.print("Configuration:", .{});

@@ -87,14 +87,30 @@ pub fn build(b: *std.Build) void {
     benchmark.linkLibrary(zlib_lib);
     b.installArtifact(benchmark);
 
-    // Benchmark run step
-    const run_benchmark = b.addRunArtifact(benchmark);
-    run_benchmark.step.dependOn(b.getInstallStep());
+    // Benchmark step with automatic server management
+    const benchmark_step = b.step("benchmark", "Run benchmarks (starts server automatically)");
+
+    // Create a system command to run server in background, benchmark, then cleanup
+    const benchmark_cmd = b.addSystemCommand(&[_][]const u8{
+        "sh",
+        "-c",
+        "trap 'kill $SERVER_PID 2>/dev/null' EXIT; " ++
+        "./zig-out/bin/grpc-server-example & SERVER_PID=$!; " ++
+        "sleep 2; " ++
+        "./zig-out/bin/grpc-benchmark --host localhost --port 50051 --requests 10 --clients 1 --size 512 --output text; " ++
+        "kill $SERVER_PID 2>/dev/null || true",
+    });
+    benchmark_cmd.step.dependOn(b.getInstallStep());
+    benchmark_step.dependOn(&benchmark_cmd.step);
+
+    // Also keep the standalone benchmark executable for manual testing
+    const run_benchmark_manual = b.addRunArtifact(benchmark);
+    run_benchmark_manual.step.dependOn(b.getInstallStep());
     if (b.args) |args| {
-        run_benchmark.addArgs(args);
+        run_benchmark_manual.addArgs(args);
     }
-    const benchmark_step = b.step("benchmark", "Run benchmarks");
-    benchmark_step.dependOn(&run_benchmark.step);
+    const benchmark_manual_step = b.step("benchmark-manual", "Run benchmark manually (requires server running)");
+    benchmark_manual_step.dependOn(&run_benchmark_manual.step);
 
     // Example executables
     const server_example = b.addExecutable(.{

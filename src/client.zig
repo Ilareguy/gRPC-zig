@@ -18,7 +18,7 @@ pub const GrpcClient = struct {
 
         return GrpcClient{
             .allocator = allocator,
-            .transport = try transport.Transport.init(allocator, connection),
+            .transport = try transport.Transport.initClient(allocator, connection),
             .compression = compression.Compression.init(allocator),
             .auth = null,
         };
@@ -66,6 +66,7 @@ pub const GrpcClient = struct {
 
         try self.transport.writeMessage(compressed);
         const response_bytes = try self.transport.readMessage();
+        defer self.allocator.free(response_bytes);
 
         // Decompress response
         return self.compression.decompress(response_bytes, compression_alg);

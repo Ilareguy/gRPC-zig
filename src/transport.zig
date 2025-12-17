@@ -21,7 +21,7 @@ pub const Transport = struct {
     allocator: std.mem.Allocator,
     http2_conn: ?http2.connection.Connection,
 
-    pub fn init(allocator: std.mem.Allocator, stream: net.Stream) !Transport {
+    pub fn initClient(allocator: std.mem.Allocator, stream: net.Stream) !Transport {
         var transport = Transport{
             .stream = stream,
             .read_buf = try allocator.alloc(u8, 1024 * 64),
@@ -32,7 +32,23 @@ pub const Transport = struct {
 
         // Initialize HTTP/2 connection
         transport.http2_conn = try http2.connection.Connection.init(allocator);
-        try transport.setupHttp2();
+        try transport.setupHttp2Client();
+
+        return transport;
+    }
+
+    pub fn initServer(allocator: std.mem.Allocator, stream: net.Stream) !Transport {
+        var transport = Transport{
+            .stream = stream,
+            .read_buf = try allocator.alloc(u8, 1024 * 64),
+            .write_buf = try allocator.alloc(u8, 1024 * 64),
+            .allocator = allocator,
+            .http2_conn = null,
+        };
+
+        // Initialize HTTP/2 connection
+        transport.http2_conn = try http2.connection.Connection.init(allocator);
+        try transport.setupHttp2Server();
 
         return transport;
     }
@@ -46,21 +62,64 @@ pub const Transport = struct {
         self.stream.close();
     }
 
-    fn setupHttp2(self: *Transport) !void {
-        // Send HTTP/2 connection preface
+    fn setupHttp2Client(self: *Transport) !void {
+        // Client sends HTTP/2 connection preface
         _ = try self.stream.write(http2.connection.Connection.PREFACE);
 
         // Send initial SETTINGS frame
-        var settings_frame = try http2.frame.Frame.init(self.allocator);
-        defer settings_frame.deinit(self.allocator);
+        const settings_header: [9]u8 = .{
+            0, 0, 0, // length: 0 (no settings parameters)
+            @intFromEnum(http2.frame.FrameType.SETTINGS),
+            0, // flags: none
+            0, 0, 0, 0, // stream_id: 0
+        };
+        _ = try self.stream.write(&settings_header);
+    }
 
-        settings_frame.type = .SETTINGS;
-        settings_frame.flags = 0;
-        settings_frame.stream_id = 0;
-        // Add your settings here
-        var buffer: [4096]u8 = undefined;
-        var writer = self.stream.writer(&buffer);
-        try settings_frame.encode(&writer.interface);
+    fn setupHttp2Server(self: *Transport) !void {
+        // Server receives and validates HTTP/2 connection preface
+        var preface_buf: [24]u8 = undefined;
+        const bytes_read = try self.stream.read(&preface_buf);
+        if (bytes_read < 24) return TransportError.ConnectionClosed;
+
+        // Validate preface
+        if (!std.mem.eql(u8, &preface_buf, http2.connection.Connection.PREFACE)) {
+            return TransportError.Http2Error;
+        }
+
+        // Read client's SETTINGS frame
+        var settings_header: [9]u8 = undefined;
+        const settings_read = try self.stream.read(&settings_header);
+        if (settings_read < 9) return TransportError.ConnectionClosed;
+
+        // TODO: Parse and process SETTINGS frame properly
+        // For now, just skip the payload if any
+        const settings_length = (@as(u24, settings_header[0]) << 16) |
+                                (@as(u24, settings_header[1]) << 8) |
+                                @as(u24, settings_header[2]);
+        if (settings_length > 0) {
+            const settings_payload = try self.allocator.alloc(u8, settings_length);
+            defer self.allocator.free(settings_payload);
+            _ = try self.stream.read(settings_payload);
+        }
+
+        // Send server's SETTINGS frame
+        const settings_response: [9]u8 = .{
+            0, 0, 0, // length: 0
+            @intFromEnum(http2.frame.FrameType.SETTINGS),
+            0, // flags: none
+            0, 0, 0, 0, // stream_id: 0
+        };
+        _ = try self.stream.write(&settings_response);
+
+        // Send SETTINGS ACK for client's settings
+        const settings_ack: [9]u8 = .{
+            0, 0, 0, // length: 0
+            @intFromEnum(http2.frame.FrameType.SETTINGS),
+            0x1, // flags: ACK
+            0, 0, 0, 0, // stream_id: 0
+        };
+        _ = try self.stream.write(&settings_ack);
     }
 
     pub fn readMessage(self: *Transport) ![]const u8 {
