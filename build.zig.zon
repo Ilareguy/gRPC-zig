@@ -4,8 +4,8 @@
     .fingerprint = 0xbcaa61f2a4ef59ec,
     .dependencies = .{
         .spice = .{
-            .url = "https://github.com/judofyr/spice",
-            .hash = "spice-0.0.0-3FtxfEq9AAASAwEKfAmQ4uDhc9vkuwHrRkjEeEYx1aCP",
+            .url = "git+https://github.com/judofyr/spice?ref=main#74486dbd7356043803f02ac0fd280526226ed7b0",
+            .hash = "spice-0.0.0-3FtxfEq9AAD-Ghd-0OtZhifuq9DzPROtSMYbsAWAOYA2",
         },
         .zlib = .{
             .url = "https://github.com/madler/zlib/archive/refs/tags/v1.3.1.tar.gz",
