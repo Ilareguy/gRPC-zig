@@ -109,7 +109,7 @@ All features are demonstrated in the [examples/](examples/) directory:
 1. Add the dependency to your project:
 
 ```sh
-zig fetch --save git+https://github.com/ziglana/gRPC-zig#main
+zig fetch --save git+https://github.com/Ilareguy/gRPC-zig#main
 ```
 
 2. Add to your `build.zig`:
